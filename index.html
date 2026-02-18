@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>UM Urology — Provider Schedule Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 :root {
   --maize: #FFCB05;
@@ -567,9 +568,298 @@ header {
 .advisor-loading .dots span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes dotPulse { 0%,100%{opacity:0.3;} 50%{opacity:1;} }
 
+/* ═══════════════════════════════════════════════ */
+/* EXPERIMENT BANNER                               */
+/* ═══════════════════════════════════════════════ */
+.experiment-banner {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  padding: 10px 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  position: relative;
+  overflow: hidden;
+  z-index: 101;
+}
+.experiment-banner::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent, transparent 10px,
+    rgba(255,203,5,0.03) 10px, rgba(255,203,5,0.03) 20px
+  );
+  pointer-events: none;
+}
+.experiment-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(255,203,5,0.15); border: 1px solid rgba(255,203,5,0.3);
+  border-radius: 20px; padding: 3px 12px 3px 8px;
+  font-size: 0.68rem; font-weight: 700; color: var(--maize);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  flex-shrink: 0;
+}
+.experiment-badge-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--maize);
+  animation: expPulse 2s ease-in-out infinite;
+}
+@keyframes expPulse { 0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(255,203,5,0.4);} 50%{opacity:0.6;box-shadow:0 0 0 4px rgba(255,203,5,0);} }
+.experiment-text {
+  font-size: 0.78rem; color: rgba(255,255,255,0.75);
+  line-height: 1.4; position: relative;
+}
+.experiment-text strong { color: var(--maize); font-weight: 600; }
+.experiment-dismiss {
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: rgba(255,255,255,0.3);
+  cursor: pointer; font-size: 1.1rem; padding: 4px 8px;
+  transition: color 0.2s; line-height: 1;
+}
+.experiment-dismiss:hover { color: rgba(255,255,255,0.7); }
+
+/* ═══════════════════════════════════════════════ */
+/* AI AGENT PANEL                                  */
+/* ═══════════════════════════════════════════════ */
+.agent-container {
+  max-width: 1100px; margin: 0 auto;
+  animation: fadeUp 350ms ease;
+}
+.agent-hero {
+  background: linear-gradient(135deg, var(--blue) 0%, #001a3a 60%, #0a2a50 100%);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 28px 32px 22px;
+  position: relative; overflow: hidden;
+}
+.agent-hero::after {
+  content: ''; position: absolute; top: -50%; right: -20%;
+  width: 300px; height: 300px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,203,5,0.08) 0%, transparent 70%);
+  pointer-events: none;
+}
+.agent-hero-label {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(255,203,5,0.12); border: 1px solid rgba(255,203,5,0.25);
+  border-radius: 20px; padding: 4px 12px;
+  font-size: 0.65rem; font-weight: 700; color: var(--maize);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+.agent-hero-title {
+  font-family: 'Source Serif 4', serif; font-size: 1.5rem;
+  font-weight: 700; color: var(--white); margin-bottom: 4px;
+  position: relative;
+}
+.agent-hero-sub { font-size: 0.82rem; color: rgba(255,255,255,0.55); position: relative; }
+
+.agent-body {
+  background: var(--gray-50); border: 1.5px solid var(--gray-200);
+  border-top: none; border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  overflow: hidden;
+}
+
+/* Chat history */
+.agent-chat {
+  max-height: 600px; overflow-y: auto; padding: 0;
+  scroll-behavior: smooth;
+}
+.agent-msg {
+  padding: 20px 32px; animation: fadeUp 250ms ease;
+  border-bottom: 1px solid var(--gray-100);
+}
+.agent-msg:last-child { border-bottom: none; }
+.agent-msg-user {
+  background: var(--white);
+}
+.agent-msg-agent {
+  background: var(--gray-50);
+}
+.agent-msg-label {
+  font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 6px;
+}
+.agent-msg-label-user { color: var(--blue); }
+.agent-msg-label-agent { color: var(--amber); }
+.agent-msg-label-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+}
+.agent-msg-text { font-size: 0.88rem; color: var(--gray-700); line-height: 1.6; }
+
+/* Dashboard widgets */
+.agent-widgets {
+  display: grid; gap: 14px; margin-top: 14px;
+}
+.agent-widgets-row {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.agent-widget-card {
+  background: var(--white); border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md); padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
+}
+/* KPI Cards */
+.kpi-card {
+  text-align: center; position: relative;
+}
+.kpi-label {
+  font-size: 0.68rem; font-weight: 700; color: var(--gray-500);
+  text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px;
+}
+.kpi-value {
+  font-family: 'Source Serif 4', serif; font-size: 2rem;
+  font-weight: 700; color: var(--blue); line-height: 1.1;
+}
+.kpi-sub {
+  font-size: 0.72rem; color: var(--gray-400); margin-top: 4px;
+}
+.kpi-accent-green .kpi-value { color: var(--green); }
+.kpi-accent-amber .kpi-value { color: var(--amber); }
+.kpi-accent-red .kpi-value { color: var(--red); }
+.kpi-accent-blue .kpi-value { color: var(--blue); }
+
+/* Chart widget */
+.chart-widget { padding: 14px; }
+.chart-widget-title {
+  font-size: 0.78rem; font-weight: 700; color: var(--blue);
+  margin-bottom: 10px;
+}
+.chart-canvas-wrap { position: relative; width: 100%; max-height: 280px; }
+
+/* Table widget */
+.widget-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.widget-table thead th {
+  background: var(--blue); color: var(--white); padding: 8px 10px;
+  text-align: left; font-size: 0.68rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.widget-table tbody td {
+  padding: 7px 10px; border-bottom: 1px solid var(--gray-100);
+}
+.widget-table tbody tr:hover { background: var(--blue-pale); }
+.widget-table tbody tr:last-child td { border-bottom: none; }
+
+/* Callout widget */
+.widget-callout {
+  background: var(--blue-pale); border-left: 3px solid var(--blue);
+  padding: 14px 18px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 0.82rem; color: var(--gray-700); line-height: 1.6;
+}
+.widget-callout-title {
+  font-weight: 700; color: var(--blue); font-size: 0.78rem;
+  margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.widget-rec {
+  background: var(--white); border: 1.5px solid var(--maize);
+  border-radius: var(--radius-sm); padding: 14px 18px;
+}
+.widget-rec-title {
+  font-weight: 700; color: var(--blue); font-size: 0.82rem;
+  margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
+}
+
+/* Heatmap */
+.heatmap-grid {
+  display: grid; gap: 2px; font-size: 0.65rem;
+}
+.heatmap-cell {
+  padding: 5px 3px; text-align: center; border-radius: 3px;
+  font-weight: 600; font-size: 0.68rem; line-height: 1.2;
+}
+.heatmap-header {
+  font-weight: 700; color: var(--blue); text-transform: uppercase;
+  font-size: 0.6rem; letter-spacing: 0.05em; padding: 4px 3px;
+}
+
+/* Agent input */
+.agent-input-area {
+  display: flex; gap: 10px; padding: 16px 32px 18px;
+  background: var(--white); border-top: 1.5px solid var(--gray-200);
+  align-items: flex-end;
+}
+.agent-textarea {
+  flex: 1; padding: 12px 16px; border: 1.5px solid var(--gray-300);
+  border-radius: var(--radius-md); font-family: 'DM Sans', sans-serif;
+  font-size: 0.88rem; resize: none; min-height: 48px; max-height: 140px;
+  line-height: 1.5; color: var(--gray-800);
+  transition: border-color var(--transition), box-shadow var(--transition);
+  background: var(--gray-50);
+}
+.agent-textarea:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0,39,76,0.08); background: var(--white); }
+.agent-textarea::placeholder { color: var(--gray-400); }
+.agent-submit {
+  padding: 12px 22px; background: var(--blue); color: var(--white);
+  border: none; border-radius: var(--radius-md); font-family: inherit;
+  font-size: 0.82rem; font-weight: 700; cursor: pointer;
+  transition: all var(--transition); white-space: nowrap;
+  display: flex; align-items: center; gap: 7px;
+  min-height: 48px;
+}
+.agent-submit:hover { background: var(--blue-light); }
+.agent-submit:disabled { opacity: 0.5; cursor: default; }
+.agent-submit svg { flex-shrink: 0; }
+
+/* Quick actions */
+.agent-quick {
+  padding: 12px 32px; display: flex; gap: 8px; flex-wrap: wrap;
+  border-top: 1px solid var(--gray-100);
+}
+.agent-quick-btn {
+  padding: 6px 14px; border-radius: 20px; font-size: 0.72rem;
+  font-weight: 600; border: 1.5px solid var(--gray-200);
+  background: var(--white); color: var(--gray-600);
+  cursor: pointer; transition: all var(--transition); font-family: inherit;
+}
+.agent-quick-btn:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-pale); }
+
+/* Loading state */
+.agent-thinking {
+  display: flex; align-items: center; gap: 10px;
+  padding: 20px 32px; color: var(--gray-500);
+  font-size: 0.85rem;
+}
+.agent-thinking-dots span {
+  display: inline-block; width: 6px; height: 6px;
+  border-radius: 50%; background: var(--blue);
+  animation: agentDot 1.4s infinite ease-in-out;
+  margin: 0 2px;
+}
+.agent-thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.agent-thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes agentDot { 0%,80%,100%{opacity:0.2;transform:scale(0.8)} 40%{opacity:1;transform:scale(1.1)} }
+
+.agent-empty-state {
+  text-align: center; padding: 40px 32px;
+  color: var(--gray-400);
+}
+.agent-empty-icon {
+  width: 52px; height: 52px; margin: 0 auto 14px;
+  background: var(--blue-pale); border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+}
+.agent-empty-title {
+  font-family: 'Source Serif 4', serif; font-size: 1.1rem;
+  font-weight: 700; color: var(--blue); margin-bottom: 6px;
+}
+.agent-empty-text { font-size: 0.82rem; max-width: 380px; margin: 0 auto; line-height: 1.5; }
+
 </style>
 </head>
 <body>
+
+<!-- Experiment Banner -->
+<div class="experiment-banner" id="experimentBanner">
+  <div class="experiment-badge">
+    <span class="experiment-badge-dot"></span>
+    Experiment
+  </div>
+  <div class="experiment-text">
+    <strong>BizIQ Labs</strong> — This dashboard is an active experiment. Features like the AI Agent are in early development and use generative AI to build custom visualizations from your schedule data. Results should be validated before operational decisions.
+  </div>
+  <button class="experiment-dismiss" onclick="document.getElementById('experimentBanner').style.display='none'" title="Dismiss">&times;</button>
+</div>
 
 <header>
   <div class="header-brand">
@@ -593,7 +883,7 @@ header {
       <button class="view-tab" data-view="compare" onclick="switchView('compare')">Compare</button>
       <button class="view-tab" data-view="department" onclick="switchView('department')">Department</button>
       <button class="view-tab" data-view="discrepancies" onclick="switchView('discrepancies')" style="color:var(--red);">Discrepancies</button>
-      <button class="view-tab" data-view="advisor" onclick="switchView('advisor')">Advisor</button>
+      <button class="view-tab" data-view="advisor" onclick="switchView('advisor')">✦ Agent</button>
     </div>
   </div>
   <div class="control-group">
@@ -1284,7 +1574,10 @@ function render() {
     deptView.style.display = 'none';
     discView.style.display = 'none';
     advView.style.display = 'block';
-    advView.innerHTML = buildAdvisorView();
+    // Only rebuild if empty (preserve chat history)
+    if (!advView.querySelector('.agent-container')) {
+      advView.innerHTML = buildAgentView();
+    }
     return;
   }
   advView.style.display = 'none';
@@ -1540,37 +1833,431 @@ function selectFromDisc(name) {
 // SCHEDULE ADVISOR — AI-powered analysis
 // ═══════════════════════════════════════════════════════════
 
-const EXAMPLE_QUESTIONS = [
-  "If Kennedy increases from 0.5 to 1.0 FTE, how many sessions can she add?",
-  "Which MHR providers have the most QGenda discrepancies?",
-  "Show me providers who are scheduled for Admin but actually seeing patients",
-  "What does Ellimoottil's week look like? Any issues?",
-  "Which providers have OR blocks but no OR RVU production?",
-  "Who in Endourology has open capacity on Wednesdays?",
-  "Compare Hadj-Moussa and Bechard's clinic utilization",
+// ═══════════════════════════════════════════════════════════
+// AI AGENT — Custom Dashboard Builder
+// ═══════════════════════════════════════════════════════════
+const AGENT_QUICK_ACTIONS = [
+  "Build a dashboard comparing all divisions by wRVU output",
+  "Show me who's scheduled Admin but generating patient RVUs",
+  "Which providers have open capacity on Wednesdays?",
+  "Create a heatmap of clinic utilization by day of week",
+  "Summarize Ellimoottil's schedule and flag any issues",
+  "Compare OR block allocation across Oncology providers",
+  "What does the Endourology division look like this cycle?",
 ];
 
-function buildAdvisorView() {
-  let h = '<div class="advisor-panel">';
-  h += '<div class="advisor-header">';
-  h += '<div class="advisor-title">Schedule Advisor</div>';
-  h += '<div class="advisor-subtitle">Ask questions about provider schedules, capacity, discrepancies, and utilization. All four data sources are analyzed.</div>';
+let agentHistory = []; // Chat message history
+let agentChartCounter = 0; // Unique IDs for chart canvases
+
+function buildAgentView() {
+  let h = '<div class="agent-container">';
+  
+  // Hero header
+  h += '<div class="agent-hero">';
+  h += '<div class="agent-hero-label"><span class="experiment-badge-dot"></span> AI Agent</div>';
+  h += '<div class="agent-hero-title">Schedule Intelligence Agent</div>';
+  h += '<div class="agent-hero-sub">Ask anything about provider schedules, capacity, or discrepancies — and get a custom dashboard built on the fly.</div>';
   h += '</div>';
   
-  h += '<div class="advisor-input-area">';
-  h += '<textarea class="advisor-textarea" id="advisorInput" placeholder="Ask a question about schedules, capacity, or discrepancies..." rows="1" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();submitAdvisor();}"></textarea>';
-  h += '<button class="advisor-submit" id="advisorSubmit" onclick="submitAdvisor()">Analyze</button>';
-  h += '</div>';
+  // Body
+  h += '<div class="agent-body">';
   
-  h += '<div class="advisor-examples">';
-  EXAMPLE_QUESTIONS.forEach((q, i) => {
-    h += '<span class="advisor-example" onclick="document.getElementById(\'advisorInput\').value=this.textContent;submitAdvisor();">' + q + '</span>';
+  // Chat area
+  h += '<div class="agent-chat" id="agentChat">';
+  
+  if (agentHistory.length === 0) {
+    h += '<div class="agent-empty-state">';
+    h += '<div class="agent-empty-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00274C" stroke-width="2" stroke-linecap="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>';
+    h += '<div class="agent-empty-title">What would you like to explore?</div>';
+    h += '<div class="agent-empty-text">Ask a question or use a quick action below. The agent analyzes all four data sources and builds a custom visualization for you.</div>';
+    h += '</div>';
+  } else {
+    agentHistory.forEach((msg, idx) => {
+      if (msg.role === 'user') {
+        h += '<div class="agent-msg agent-msg-user">';
+        h += '<div class="agent-msg-label agent-msg-label-user"><span class="agent-msg-label-dot" style="background:var(--blue)"></span> You</div>';
+        h += '<div class="agent-msg-text">' + escapeHtml(msg.text) + '</div>';
+        h += '</div>';
+      } else {
+        h += '<div class="agent-msg agent-msg-agent">';
+        h += '<div class="agent-msg-label agent-msg-label-agent"><span class="agent-msg-label-dot" style="background:var(--maize)"></span> Agent</div>';
+        h += '<div id="agentWidgetArea_' + idx + '" class="agent-msg-content"></div>';
+        h += '</div>';
+      }
+    });
+  }
+  
+  h += '</div>'; // agent-chat
+  
+  // Quick actions
+  h += '<div class="agent-quick" id="agentQuickActions">';
+  AGENT_QUICK_ACTIONS.forEach(q => {
+    h += '<button class="agent-quick-btn" onclick="agentQuickAction(this.textContent)">' + q + '</button>';
   });
   h += '</div>';
   
-  h += '<div id="advisorResponse"></div>';
+  // Input area
+  h += '<div class="agent-input-area">';
+  h += '<textarea class="agent-textarea" id="agentInput" placeholder="Ask a question or describe the dashboard you want..." rows="1" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();submitAgent();}" oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,140)+\'px\';"></textarea>';
+  h += '<button class="agent-submit" id="agentSubmit" onclick="submitAgent()">';
+  h += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
+  h += 'Build';
+  h += '</button>';
   h += '</div>';
+  
+  h += '</div>'; // agent-body
+  h += '</div>'; // agent-container
   return h;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function agentQuickAction(text) {
+  const input = document.getElementById('agentInput');
+  if (input) input.value = text;
+  submitAgent();
+}
+
+function renderAgentMessages() {
+  const chatEl = document.getElementById('agentChat');
+  if (!chatEl) return;
+  
+  let h = '';
+  agentHistory.forEach((msg, idx) => {
+    if (msg.role === 'user') {
+      h += '<div class="agent-msg agent-msg-user">';
+      h += '<div class="agent-msg-label agent-msg-label-user"><span class="agent-msg-label-dot" style="background:var(--blue)"></span> You</div>';
+      h += '<div class="agent-msg-text">' + escapeHtml(msg.text) + '</div>';
+      h += '</div>';
+    } else if (msg.role === 'thinking') {
+      h += '<div class="agent-thinking">';
+      h += '<div class="agent-thinking-dots"><span></span><span></span><span></span></div>';
+      h += '<span>Building your dashboard...</span>';
+      h += '</div>';
+    } else {
+      h += '<div class="agent-msg agent-msg-agent">';
+      h += '<div class="agent-msg-label agent-msg-label-agent"><span class="agent-msg-label-dot" style="background:var(--maize)"></span> Agent</div>';
+      h += '<div id="agentWidgetArea_' + idx + '" class="agent-msg-content"></div>';
+      h += '</div>';
+    }
+  });
+  
+  chatEl.innerHTML = h;
+  
+  // Now render widgets for agent messages
+  agentHistory.forEach((msg, idx) => {
+    if (msg.role === 'agent' && msg.widgets) {
+      const area = document.getElementById('agentWidgetArea_' + idx);
+      if (area) renderWidgets(area, msg.widgets, msg.narrative);
+    }
+  });
+  
+  // Scroll to bottom
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+// ═══════════════════════════════════════════════════════════
+// WIDGET RENDERER
+// ═══════════════════════════════════════════════════════════
+function renderWidgets(container, widgets, narrative) {
+  let h = '';
+  
+  // Narrative text first
+  if (narrative) {
+    h += '<div class="agent-msg-text" style="margin-bottom:14px;">' + narrative + '</div>';
+  }
+  
+  h += '<div class="agent-widgets">';
+  
+  widgets.forEach(widget => {
+    switch(widget.type) {
+      case 'kpi_row':
+        h += '<div class="agent-widgets-row">';
+        (widget.cards || []).forEach(card => {
+          const accent = card.accent || 'blue';
+          h += '<div class="agent-widget-card kpi-card kpi-accent-' + accent + '">';
+          h += '<div class="kpi-label">' + escapeHtml(card.label) + '</div>';
+          h += '<div class="kpi-value">' + escapeHtml(String(card.value)) + '</div>';
+          if (card.sub) h += '<div class="kpi-sub">' + escapeHtml(card.sub) + '</div>';
+          h += '</div>';
+        });
+        h += '</div>';
+        break;
+        
+      case 'table':
+        h += '<div class="agent-widget-card" style="padding:0;overflow:hidden;">';
+        if (widget.title) h += '<div style="padding:12px 14px 8px;font-weight:700;font-size:0.82rem;color:var(--blue);">' + escapeHtml(widget.title) + '</div>';
+        h += '<table class="widget-table"><thead><tr>';
+        (widget.columns || []).forEach(col => h += '<th>' + escapeHtml(col) + '</th>');
+        h += '</tr></thead><tbody>';
+        (widget.rows || []).forEach(row => {
+          h += '<tr>';
+          row.forEach(cell => h += '<td>' + cell + '</td>');
+          h += '</tr>';
+        });
+        h += '</tbody></table></div>';
+        break;
+        
+      case 'bar_chart':
+      case 'line_chart':
+      case 'pie_chart':
+      case 'doughnut_chart':
+        agentChartCounter++;
+        const cid = 'agentChart_' + agentChartCounter;
+        h += '<div class="agent-widget-card chart-widget">';
+        if (widget.title) h += '<div class="chart-widget-title">' + escapeHtml(widget.title) + '</div>';
+        h += '<div class="chart-canvas-wrap"><canvas id="' + cid + '"></canvas></div>';
+        h += '</div>';
+        // Store chart config for post-render
+        widget._canvasId = cid;
+        break;
+        
+      case 'callout':
+        h += '<div class="agent-widget-card widget-callout">';
+        if (widget.title) h += '<div class="widget-callout-title">' + escapeHtml(widget.title) + '</div>';
+        h += '<div>' + (widget.content || '') + '</div>';
+        h += '</div>';
+        break;
+        
+      case 'recommendation':
+        h += '<div class="agent-widget-card widget-rec">';
+        if (widget.title) h += '<div class="widget-rec-title">✦ ' + escapeHtml(widget.title) + '</div>';
+        h += '<div style="font-size:0.82rem;line-height:1.6;color:var(--gray-700);">' + (widget.content || '') + '</div>';
+        h += '</div>';
+        break;
+        
+      case 'heatmap':
+        h += '<div class="agent-widget-card">';
+        if (widget.title) h += '<div style="font-weight:700;font-size:0.82rem;color:var(--blue);margin-bottom:10px;">' + escapeHtml(widget.title) + '</div>';
+        const cols = widget.columns || [];
+        const rows = widget.rows || [];
+        h += '<div class="heatmap-grid" style="grid-template-columns: auto ' + cols.map(() => '1fr').join(' ') + ';">';
+        // Header row
+        h += '<div class="heatmap-header"></div>';
+        cols.forEach(c => h += '<div class="heatmap-header">' + escapeHtml(c) + '</div>');
+        // Data rows
+        rows.forEach(row => {
+          h += '<div class="heatmap-header" style="text-align:right;padding-right:8px;">' + escapeHtml(row.label) + '</div>';
+          row.values.forEach(v => {
+            const intensity = Math.min(1, (v.value || 0) / (widget.max || 1));
+            const bg = v.value > 0 
+              ? 'rgba(0,39,76,' + (0.06 + intensity * 0.35) + ')' 
+              : 'var(--gray-50)';
+            const color = intensity > 0.5 ? 'var(--white)' : 'var(--gray-700)';
+            h += '<div class="heatmap-cell" style="background:' + bg + ';color:' + color + ';">' + (v.display || v.value || '—') + '</div>';
+          });
+        });
+        h += '</div></div>';
+        break;
+      
+      default:
+        // Fallback: render as callout
+        if (widget.content) {
+          h += '<div class="agent-widget-card"><div style="font-size:0.82rem;line-height:1.6;color:var(--gray-700);">' + widget.content + '</div></div>';
+        }
+    }
+  });
+  
+  h += '</div>';
+  container.innerHTML = h;
+  
+  // Post-render: create Chart.js instances
+  widgets.forEach(widget => {
+    if (widget._canvasId && typeof Chart !== 'undefined') {
+      const canvas = document.getElementById(widget._canvasId);
+      if (!canvas) return;
+      
+      const chartTypeMap = { bar_chart: 'bar', line_chart: 'line', pie_chart: 'pie', doughnut_chart: 'doughnut' };
+      const chartType = chartTypeMap[widget.type] || 'bar';
+      
+      const COLORS = ['#00274C','#FFCB05','#2D8A56','#D4850A','#C62828','#5B4BA0','#1A7A7A','#A0600A','#9D174D','#3730A3'];
+      
+      const datasets = (widget.datasets || []).map((ds, i) => ({
+        label: ds.label || '',
+        data: ds.data || [],
+        backgroundColor: ds.colors || (chartType === 'pie' || chartType === 'doughnut' ? COLORS.slice(0, (ds.data||[]).length) : COLORS[i % COLORS.length] + (chartType === 'bar' ? 'CC' : '')),
+        borderColor: ds.borderColor || (chartType === 'line' ? COLORS[i % COLORS.length] : undefined),
+        borderWidth: chartType === 'line' ? 2.5 : 1,
+        fill: chartType === 'line' ? false : undefined,
+        tension: chartType === 'line' ? 0.3 : undefined,
+        pointRadius: chartType === 'line' ? 4 : undefined,
+        pointBackgroundColor: chartType === 'line' ? COLORS[i % COLORS.length] : undefined,
+      }));
+      
+      try {
+        new Chart(canvas, {
+          type: chartType,
+          data: {
+            labels: widget.labels || [],
+            datasets: datasets
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+              legend: { display: datasets.length > 1 || chartType === 'pie' || chartType === 'doughnut', position: 'bottom', labels: { font: { family: 'DM Sans', size: 11 }, padding: 12 } },
+              title: { display: false }
+            },
+            scales: (chartType === 'pie' || chartType === 'doughnut') ? {} : {
+              x: { grid: { display: false }, ticks: { font: { family: 'DM Sans', size: 11 } } },
+              y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { family: 'DM Sans', size: 11 } } }
+            }
+          }
+        });
+      } catch(e) { console.error('Chart error:', e); }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// AGENT SUBMIT — Calls Claude and renders dashboard
+// ═══════════════════════════════════════════════════════════
+async function submitAgent() {
+  const input = document.getElementById('agentInput');
+  const submitBtn = document.getElementById('agentSubmit');
+  const question = (input ? input.value.trim() : '');
+  
+  if (!question) return;
+  
+  // Add user message
+  agentHistory.push({ role: 'user', text: question });
+  agentHistory.push({ role: 'thinking' });
+  if (input) input.value = '';
+  renderAgentMessages();
+  
+  submitBtn.disabled = true;
+  
+  // Hide quick actions after first message
+  const qa = document.getElementById('agentQuickActions');
+  if (qa && agentHistory.filter(m => m.role === 'user').length > 1) qa.style.display = 'none';
+  
+  const dataContext = buildFullContext(question);
+  
+  const systemPrompt = `You are the Schedule Intelligence Agent for the University of Michigan Department of Urology. You analyze provider schedule data and BUILD CUSTOM DASHBOARDS by returning structured JSON widget specifications.
+
+DATA SOURCES:
+1. OR Schedule — surgical block allocations (room, facility, week, day)
+2. Clinic Templates — MiChart clinic session assignments (location, week, day, AM/PM)
+3. QGenda — work pattern assignments (the system of record for scheduling)
+4. RVU Production — actual patient activity and wRVU generation (last 3 months Nov 2025-Jan 2026, the ground truth)
+
+KEY DEFINITIONS:
+- Session = one half-day (AM or PM). Full clinic day = 2 sessions.
+- 1.0 clinical FTE ≈ 8-10 clinical sessions/week. 0.5 FTE ≈ 4-5 sessions/week.
+- Schedule grid: 5 weeks × 5 days (Mon-Fri).
+- Locations: TC=Taubman, NHC=Northville, BCSC=Brighton, WAA=West Ann Arbor, LCSC=Livonia, YHC=Ypsilanti, CHE=Chelsea
+- Divisions: ENDO (Endourology), ONC (Oncology), MHR (Men's Health & Reconstruction), NPR (Neuro Pelvic Reconstruction), PED (Pediatric), CUE (Community Urology East), CUW (Community Urology West)
+
+YOUR RESPONSE FORMAT:
+You MUST respond with ONLY valid JSON, no markdown fences, no commentary outside JSON. The JSON must match this schema:
+
+{
+  "narrative": "A 1-3 sentence plain-text summary of the key findings, presented as if briefing the Department Chair.",
+  "widgets": [
+    // Array of widget objects. Available types:
+
+    // KPI ROW — show 2-5 metric cards
+    { "type": "kpi_row", "cards": [
+      { "label": "Metric Name", "value": "42", "sub": "optional subtitle", "accent": "blue|green|amber|red" }
+    ]},
+
+    // TABLE — comparison data
+    { "type": "table", "title": "Table Title", "columns": ["Col1","Col2"],
+      "rows": [["val1","val2"]] },
+
+    // CHARTS — bar, line, pie, doughnut
+    { "type": "bar_chart", "title": "Chart Title",
+      "labels": ["A","B","C"],
+      "datasets": [{ "label": "Series", "data": [10,20,30] }] },
+      
+    // Use pie_chart or doughnut_chart for proportional data
+    { "type": "pie_chart", "title": "Distribution",
+      "labels": ["A","B","C"],
+      "datasets": [{ "data": [40,35,25] }] },
+
+    // HEATMAP — week × day grid visualization
+    { "type": "heatmap", "title": "Coverage Heatmap", "max": 10,
+      "columns": ["Mon","Tue","Wed","Thu","Fri"],
+      "rows": [
+        { "label": "Wk 1", "values": [{"value":5,"display":"5"},{"value":3,"display":"3"}] }
+      ]
+    },
+
+    // CALLOUT — data highlight
+    { "type": "callout", "title": "Key Finding", "content": "HTML content" },
+
+    // RECOMMENDATION — actionable suggestion
+    { "type": "recommendation", "title": "Recommendation Title", "content": "HTML content" }
+  ]
+}
+
+DASHBOARD DESIGN GUIDELINES:
+- Always start with a kpi_row showing the most important top-line metrics for the question.
+- Use charts for comparisons, distributions, and trends (bar_chart for comparisons, pie/doughnut for distributions, line for trends).
+- Use heatmaps for week × day schedule visualizations.
+- Use tables for detailed provider-by-provider data.
+- End with recommendations when actionable insights exist.
+- Be specific and data-driven. Use actual numbers from the data.
+- Keep narratives crisp — this is for the Department Chair.
+- You may use simple HTML tags like <strong> and <em> inside "content" fields.
+- For table cell values, you may use simple HTML for formatting.
+- CRITICAL: Output ONLY the JSON object. No text before or after.`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5-20250929',
+        max_tokens: 4000,
+        system: systemPrompt,
+        messages: [{
+          role: 'user',
+          content: dataContext + '\n\n=== QUESTION ===\n' + question
+        }]
+      })
+    });
+    
+    const data = await response.json();
+    const rawText = data.content.map(b => b.type === 'text' ? b.text : '').join('');
+    
+    // Remove thinking indicator
+    agentHistory = agentHistory.filter(m => m.role !== 'thinking');
+    
+    // Parse JSON response
+    let parsed;
+    try {
+      const cleaned = rawText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      parsed = JSON.parse(cleaned);
+    } catch(parseErr) {
+      // Fallback: treat as plain HTML response (legacy advisor mode)
+      parsed = {
+        narrative: '',
+        widgets: [{ type: 'callout', title: 'Analysis', content: rawText }]
+      };
+    }
+    
+    agentHistory.push({
+      role: 'agent',
+      widgets: parsed.widgets || [],
+      narrative: parsed.narrative || ''
+    });
+    
+  } catch (err) {
+    agentHistory = agentHistory.filter(m => m.role !== 'thinking');
+    agentHistory.push({
+      role: 'agent',
+      narrative: '',
+      widgets: [{ type: 'callout', title: 'Error', content: '<span style="color:var(--red);">Agent request failed: ' + escapeHtml(err.message) + '</span>' }]
+    });
+  }
+  
+  renderAgentMessages();
+  submitBtn.disabled = false;
 }
 
 function buildProviderContext(name) {
@@ -1751,69 +2438,6 @@ function buildFullContext(question) {
   }
   
   return ctx;
-}
-
-async function submitAdvisor() {
-  const input = document.getElementById('advisorInput');
-  const responseDiv = document.getElementById('advisorResponse');
-  const submitBtn = document.getElementById('advisorSubmit');
-  const question = input.value.trim();
-  
-  if (!question) return;
-  
-  submitBtn.disabled = true;
-  submitBtn.textContent = 'Analyzing...';
-  responseDiv.innerHTML = '<div class="advisor-loading"><div>Analyzing schedule data</div><div class="dots"><span>.</span><span>.</span><span>.</span></div></div>';
-  
-  const dataContext = buildFullContext(question);
-  
-  const systemPrompt = `You are the Schedule Advisor for the University of Michigan Department of Urology. You analyze provider schedule data across four sources:
-
-1. OR Schedule — surgical block allocations (room, facility, week, day)
-2. Clinic Templates — MiChart clinic session assignments (location, week, day, AM/PM)
-3. QGenda — work pattern assignments (the system of record for scheduling)
-4. RVU Production — actual patient activity and wRVU generation (last 3 months, the ground truth)
-
-Key definitions:
-- A "session" = one half-day (AM or PM). A full clinic day = 2 sessions.
-- FTE context: 1.0 clinical FTE ≈ 8-10 clinical sessions/week for faculty. APPs may differ.
-- 0.5 FTE ≈ 4-5 clinical sessions/week.
-- The schedule grid is 5 weeks × 5 days (Mon-Fri).
-- Location codes: TC=Taubman, NHC=Northville, BCSC=Brighton, WAA=West Ann Arbor, LCSC=Livonia, YHC=Ypsilanti, CHE=Chelsea
-- Divisions: ENDO (Endourology), ONC (Oncology), MHR (Men's Health & Reconstruction), NPR (Neuro Pelvic Reconstruction), PED (Pediatric), CUE (Community Urology East), CUW (Community Urology West)
-
-When answering:
-- Be specific and data-driven. Reference actual cell values, wRVU numbers, and slot counts.
-- Use tables in HTML when presenting comparisons or schedules.
-- When recommending changes, explain the rationale using the data.
-- Flag any discrepancies or data gaps that are relevant.
-- Be concise but thorough. The audience is the Department Chair making operational decisions.
-- Format your response in clean HTML (no markdown). Use <h3>, <p>, <table>, <ul>, <div class="data-callout">, <div class="rec-box"><div class="rec-box-title">title</div>content</div>.`;
-
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-5-20250929',
-        max_tokens: 4000,
-        system: systemPrompt,
-        messages: [{
-          role: 'user',
-          content: `${dataContext}\n\n=== QUESTION ===\n${question}`
-        }]
-      })
-    });
-    
-    const data = await response.json();
-    const text = data.content.map(b => b.type === 'text' ? b.text : '').join('');
-    responseDiv.innerHTML = '<div class="advisor-response">' + text + '</div>';
-  } catch (err) {
-    responseDiv.innerHTML = '<div class="advisor-response"><p style="color:var(--red);">Analysis failed: ' + err.message + '</p></div>';
-  }
-  
-  submitBtn.disabled = false;
-  submitBtn.textContent = 'Analyze';
 }
 
 initDivisionFilter();
