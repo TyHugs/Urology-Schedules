@@ -1837,17 +1837,335 @@ function selectFromDisc(name) {
 // AI AGENT — Custom Dashboard Builder
 // ═══════════════════════════════════════════════════════════
 const AGENT_QUICK_ACTIONS = [
-  "Build a dashboard comparing all divisions by wRVU output",
-  "Show me who's scheduled Admin but generating patient RVUs",
-  "Which providers have open capacity on Wednesdays?",
-  "Create a heatmap of clinic utilization by day of week",
-  "Summarize Ellimoottil's schedule and flag any issues",
-  "Compare OR block allocation across Oncology providers",
-  "What does the Endourology division look like this cycle?",
+  "Division Performance Scorecard",
+  "Admin-Flagged Providers with Patient RVUs",
+  "Department Schedule Heatmap",
+  "OR Block Distribution by Facility",
+  "Provider Capacity & Open Slots",
+  "Discrepancy Risk Report",
 ];
 
-let agentHistory = []; // Chat message history
-let agentChartCounter = 0; // Unique IDs for chart canvases
+let agentHistory = [];
+let agentChartCounter = 0;
+
+// ═══════════════════════════════════════════════════════════
+// DEMO DASHBOARD GENERATORS — Computed from live data
+// ═══════════════════════════════════════════════════════════
+
+function demoDivisionScorecard() {
+  const divs = {};
+  ALL_PROVIDERS.forEach(p => {
+    const d = (PROVIDER_DIVISIONS[p] || {}).division || 'Unknown';
+    if (!divs[d]) divs[d] = { providers: 0, orBlocks: 0, qSlots: 0, rvuCells: 0, totalRVU: 0 };
+    divs[d].providers++;
+    divs[d].orBlocks += (OR_DATA.providers[p] || []).length;
+    divs[d].qSlots += Object.keys(QGENDA_DATA[p] || {}).length;
+    const rvu = RVU_DATA[p] || {};
+    Object.values(rvu).forEach(c => { divs[d].rvuCells++; divs[d].totalRVU += (c.avg_rvus || 0); });
+  });
+  const divNames = Object.keys(divs).filter(d => d !== 'Unknown').sort();
+  const totalProviders = ALL_PROVIDERS.length;
+  const totalOR = divNames.reduce((s, d) => s + divs[d].orBlocks, 0);
+  const totalRVU = divNames.reduce((s, d) => s + divs[d].totalRVU, 0);
+  const totalDisc = DISCREPANCIES.length;
+  const highDisc = DISCREPANCIES.filter(d => d.severity === 'high').length;
+  return {
+    narrative: totalProviders + ' providers across ' + divNames.length + ' divisions generating ' + totalRVU.toFixed(1) + ' avg weekly wRVUs. ' + totalOR + ' OR blocks allocated with ' + totalDisc + ' cross-source discrepancies (' + highDisc + ' high severity).',
+    widgets: [
+      { type: 'kpi_row', cards: [
+        { label: 'Total Providers', value: totalProviders, sub: divNames.length + ' divisions', accent: 'blue' },
+        { label: 'OR Blocks', value: totalOR, sub: 'Across all weeks', accent: 'blue' },
+        { label: 'Avg Weekly wRVUs', value: totalRVU.toFixed(1), sub: 'Nov 25 - Jan 26', accent: 'green' },
+        { label: 'Discrepancies', value: totalDisc, sub: highDisc + ' high severity', accent: highDisc > 10 ? 'red' : 'amber' },
+      ]},
+      { type: 'bar_chart', title: 'Provider Count by Division',
+        labels: divNames, datasets: [{ label: 'Providers', data: divNames.map(d => divs[d].providers) }] },
+      { type: 'bar_chart', title: 'Average Weekly wRVUs by Division',
+        labels: divNames, datasets: [{ label: 'wRVUs', data: divNames.map(d => +divs[d].totalRVU.toFixed(1)) }] },
+      { type: 'table', title: 'Division Detail', columns: ['Division', 'Providers', 'OR Blocks', 'QGenda Slots', 'RVU Cells', 'Avg wRVUs/Wk'],
+        rows: divNames.map(d => [
+          '<strong>' + d + '</strong> - ' + (DIVISIONS_META[d] || ''),
+          divs[d].providers, divs[d].orBlocks, divs[d].qSlots, divs[d].rvuCells,
+          '<strong>' + divs[d].totalRVU.toFixed(1) + '</strong>'
+        ])
+      },
+      { type: 'recommendation', title: 'Key Takeaway',
+        content: 'Divisions with high provider counts but lower wRVU output may have capacity optimization opportunities. Cross-reference with the Discrepancy Report for scheduling conflicts suppressing productivity.' }
+    ]
+  };
+}
+
+function demoAdminDiscrepancies() {
+  const adminActive = DISCREPANCIES.filter(d => d.type === 'qgenda_admin_but_active');
+  const byProvider = {};
+  adminActive.forEach(d => {
+    if (!byProvider[d.provider]) byProvider[d.provider] = { count: 0, division: d.division, slots: [] };
+    byProvider[d.provider].count++;
+    byProvider[d.provider].slots.push('Wk' + d.week + ' ' + d.day);
+  });
+  const provList = Object.entries(byProvider).sort((a, b) => b[1].count - a[1].count);
+  const divCounts = {};
+  adminActive.forEach(d => { divCounts[d.division] = (divCounts[d.division] || 0) + 1; });
+  const topDiv = Object.entries(divCounts).sort((a,b) => b[1]-a[1]);
+  return {
+    narrative: adminActive.length + ' instances found where providers are scheduled as Admin in QGenda but generating patient-facing wRVUs. This affects ' + provList.length + ' providers - potential template errors or undocumented clinical activity.',
+    widgets: [
+      { type: 'kpi_row', cards: [
+        { label: 'Admin to Active Flags', value: adminActive.length, sub: 'High severity', accent: 'red' },
+        { label: 'Affected Providers', value: provList.length, sub: 'Need template review', accent: 'amber' },
+        { label: 'Most Affected Division', value: topDiv[0] ? topDiv[0][0] : 'N/A', sub: (topDiv[0] ? topDiv[0][1] : 0) + ' instances', accent: 'amber' },
+      ]},
+      { type: 'bar_chart', title: 'Admin to Active Discrepancies by Provider',
+        labels: provList.slice(0, 12).map(p => p[0]),
+        datasets: [{ label: 'Discrepancies', data: provList.slice(0, 12).map(p => p[1].count) }] },
+      { type: 'doughnut_chart', title: 'Distribution by Division',
+        labels: Object.keys(divCounts), datasets: [{ data: Object.values(divCounts) }] },
+      { type: 'table', title: 'Provider Detail', columns: ['Provider', 'Division', 'Flags', 'Affected Slots'],
+        rows: provList.slice(0, 15).map(([name, info]) => [
+          '<strong>' + name + '</strong>', info.division,
+          '<span style="color:var(--red);font-weight:700;">' + info.count + '</span>',
+          '<span style="font-size:0.72rem;">' + info.slots.slice(0, 4).join(', ') + (info.slots.length > 4 ? ' +' + (info.slots.length - 4) + ' more' : '') + '</span>'
+        ])
+      },
+      { type: 'recommendation', title: 'Action Required',
+        content: 'These providers QGenda templates should be reviewed and corrected. Admin-coded slots with active RVU production mean the schedule does not reflect reality - impacting capacity planning, FTE calculations, and downstream reporting. Prioritize providers with 3+ flags.' }
+    ]
+  };
+}
+
+function demoDeptHeatmap() {
+  const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
+  const dayShort = ['Mon','Tue','Wed','Thu','Fri'];
+  const dayCounts = {};
+  dayNames.forEach(d => { dayCounts[d] = { or: 0, clinic: 0, admin: 0, total: 0 }; });
+  ALL_PROVIDERS.forEach(p => {
+    const q = QGENDA_DATA[p] || {};
+    Object.entries(q).forEach(([key, cell]) => {
+      const day = key.split('-')[1];
+      if (!dayCounts[day]) return;
+      dayCounts[day].total++;
+      const color = cell.split ? cell.am_color : cell.color;
+      if (color === 'or') dayCounts[day].or++;
+      else if (color === 'clinic') dayCounts[day].clinic++;
+      else if (color === 'admin') dayCounts[day].admin++;
+    });
+  });
+  const divDayMap = {};
+  const allDivs = [...new Set(ALL_PROVIDERS.map(p => (PROVIDER_DIVISIONS[p] || {}).division).filter(Boolean))].sort();
+  allDivs.forEach(div => { divDayMap[div] = {}; dayNames.forEach(d => { divDayMap[div][d] = 0; }); });
+  ALL_PROVIDERS.forEach(p => {
+    const div = (PROVIDER_DIVISIONS[p] || {}).division;
+    if (!div) return;
+    const q = QGENDA_DATA[p] || {};
+    Object.keys(q).forEach(key => { const day = key.split('-')[1]; divDayMap[div][day] = (divDayMap[div][day] || 0) + 1; });
+  });
+  const maxVal = Math.max(...allDivs.flatMap(div => dayNames.map(d => divDayMap[div][d])), 1);
+  const busiestDay = dayNames.reduce((best, d) => dayCounts[d].total > dayCounts[best].total ? d : best, 'Monday');
+  const lightestDay = dayNames.reduce((best, d) => dayCounts[d].total < dayCounts[best].total ? d : best, 'Monday');
+  return {
+    narrative: 'Across all ' + ALL_PROVIDERS.length + ' providers, ' + busiestDay + ' is the busiest day (' + dayCounts[busiestDay].total + ' slots), while ' + lightestDay + ' is lightest (' + dayCounts[lightestDay].total + '). This reveals potential redistribution opportunities.',
+    widgets: [
+      { type: 'kpi_row', cards: [
+        { label: 'Busiest Day', value: busiestDay.substring(0,3), sub: dayCounts[busiestDay].total + ' total slots', accent: 'blue' },
+        { label: 'Lightest Day', value: lightestDay.substring(0,3), sub: dayCounts[lightestDay].total + ' total slots', accent: 'amber' },
+        { label: 'Total Scheduled Slots', value: dayNames.reduce((s, d) => s + dayCounts[d].total, 0), sub: 'All providers, all weeks', accent: 'green' },
+      ]},
+      { type: 'heatmap', title: 'Division x Day Coverage (slots per division-day)', max: maxVal,
+        columns: dayShort,
+        rows: allDivs.map(div => ({
+          label: div,
+          values: dayNames.map(d => ({ value: divDayMap[div][d], display: String(divDayMap[div][d]) }))
+        }))
+      },
+      { type: 'bar_chart', title: 'Slot Type Distribution by Day of Week',
+        labels: dayShort,
+        datasets: [
+          { label: 'OR / Procedure', data: dayNames.map(d => dayCounts[d].or) },
+          { label: 'Clinic', data: dayNames.map(d => dayCounts[d].clinic) },
+          { label: 'Admin / Research', data: dayNames.map(d => dayCounts[d].admin) },
+        ]
+      },
+      { type: 'recommendation', title: 'Capacity Redistribution Opportunity',
+        content: '<strong>' + lightestDay + '</strong> has significantly lower utilization. Consider shifting flexible clinic or admin sessions to balance load and reduce patient wait times on peak days.' }
+    ]
+  };
+}
+
+function demoORDistribution() {
+  const facilCounts = {};
+  const divOR = {};
+  let totalBlocks = 0, fcfsCount = 0;
+  const roomCounts = {};
+  ALL_PROVIDERS.forEach(p => {
+    const entries = OR_DATA.providers[p] || [];
+    const div = (PROVIDER_DIVISIONS[p] || {}).division || 'Unknown';
+    if (!divOR[div]) divOR[div] = 0;
+    entries.forEach(e => {
+      totalBlocks++;
+      facilCounts[e.facility] = (facilCounts[e.facility] || 0) + 1;
+      divOR[div]++;
+      if (e.is_fcfs) fcfsCount++;
+      roomCounts[e.room] = (roomCounts[e.room] || 0) + 1;
+    });
+  });
+  const facilities = Object.entries(facilCounts).sort((a, b) => b[1] - a[1]);
+  const topRooms = Object.entries(roomCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const divEntries = Object.entries(divOR).filter(([d]) => d !== 'Unknown').sort((a, b) => b[1] - a[1]);
+  return {
+    narrative: totalBlocks + ' OR blocks across ' + facilities.length + ' facilities. ' + (facilities[0] ? facilities[0][0] + ' leads with ' + facilities[0][1] + ' blocks. ' : '') + fcfsCount + ' blocks (' + (totalBlocks ? Math.round(fcfsCount/totalBlocks*100) : 0) + '%) are FCFS.',
+    widgets: [
+      { type: 'kpi_row', cards: [
+        { label: 'Total OR Blocks', value: totalBlocks, sub: '5-week cycle', accent: 'blue' },
+        { label: 'Facilities', value: facilities.length, sub: facilities.map(f => f[0]).join(', '), accent: 'blue' },
+        { label: 'FCFS Blocks', value: fcfsCount, sub: Math.round(fcfsCount/Math.max(totalBlocks,1)*100) + '% of total', accent: 'amber' },
+      ]},
+      { type: 'doughnut_chart', title: 'OR Blocks by Facility',
+        labels: facilities.map(f => f[0]), datasets: [{ data: facilities.map(f => f[1]) }] },
+      { type: 'bar_chart', title: 'OR Blocks by Division',
+        labels: divEntries.map(d => d[0]), datasets: [{ label: 'OR Blocks', data: divEntries.map(d => d[1]) }] },
+      { type: 'table', title: 'Most Utilized OR Rooms', columns: ['Room', 'Block Count', 'Utilization'],
+        rows: topRooms.map(([room, count]) => [
+          '<strong>' + room + '</strong>', count,
+          '<div style="background:var(--blue-pale);border-radius:3px;overflow:hidden;height:14px;"><div style="height:100%;background:var(--blue);width:' + Math.round(count/Math.max(topRooms[0][1],1)*100) + '%;border-radius:3px;"></div></div>'
+        ])
+      },
+      { type: 'recommendation', title: 'Observation',
+        content: 'Review FCFS block utilization - these ' + fcfsCount + ' unassigned blocks may represent optimization opportunities for surgeons who are consistently waitlisted. Cross-reference with RVU production to identify high-volume surgeons who could benefit from dedicated allocations.' }
+    ]
+  };
+}
+
+function demoCapacitySlots() {
+  const allKeys = new Set();
+  [1,2,3,4,5].forEach(w => ['Monday','Tuesday','Wednesday','Thursday','Friday'].forEach(d => allKeys.add(w+'-'+d)));
+  const provData = [];
+  ALL_PROVIDERS.forEach(p => {
+    const q = QGENDA_DATA[p] || {};
+    const r = RVU_DATA[p] || {};
+    const qKeys = new Set(Object.keys(q));
+    const rKeys = new Set(Object.keys(r));
+    const emptySlots = [...allKeys].filter(k => !qKeys.has(k));
+    let clinicalSessions = 0, adminSessions = 0;
+    qKeys.forEach(k => {
+      const cell = q[k];
+      if (cell.split) { clinicalSessions += 2; }
+      else {
+        const f = cell.full || '';
+        if (f.includes('Admin') || f.includes('Research')) adminSessions++;
+        else clinicalSessions++;
+      }
+    });
+    let totalRVU = 0;
+    Object.values(r).forEach(c => totalRVU += (c.avg_rvus || 0));
+    provData.push({ name: p, div: (PROVIDER_DIVISIONS[p] || {}).division || '?', filled: qKeys.size, empty: emptySlots.length, clinical: clinicalSessions, admin: adminSessions, rvuCells: rKeys.size, totalRVU: totalRVU });
+  });
+  const byEmpty = [...provData].sort((a, b) => b.empty - a.empty);
+  const totalEmpty = provData.reduce((s, p) => s + p.empty, 0);
+  const totalFilled = provData.reduce((s, p) => s + p.filled, 0);
+  const avgUtil = totalFilled / Math.max(totalFilled + totalEmpty, 1) * 100;
+  const divCap = {};
+  provData.forEach(p => {
+    if (!divCap[p.div]) divCap[p.div] = { filled: 0, empty: 0 };
+    divCap[p.div].filled += p.filled;
+    divCap[p.div].empty += p.empty;
+  });
+  const divCapArr = Object.entries(divCap).filter(([d]) => d !== '?').sort((a,b) => b[1].empty - a[1].empty);
+  return {
+    narrative: 'Department-wide QGenda utilization is ' + avgUtil.toFixed(1) + '% (' + totalFilled + ' filled of ' + (totalFilled+totalEmpty) + ' slots). ' + totalEmpty + ' open slots represent potential capacity for additional clinical or admin sessions.',
+    widgets: [
+      { type: 'kpi_row', cards: [
+        { label: 'Schedule Utilization', value: avgUtil.toFixed(1) + '%', sub: totalFilled + ' of ' + (totalFilled+totalEmpty) + ' slots', accent: avgUtil > 70 ? 'green' : 'amber' },
+        { label: 'Total Open Slots', value: totalEmpty, sub: 'Across all providers', accent: 'amber' },
+        { label: 'Avg Open / Provider', value: (totalEmpty / Math.max(ALL_PROVIDERS.length, 1)).toFixed(1), sub: 'Per 5-week cycle', accent: 'blue' },
+      ]},
+      { type: 'bar_chart', title: 'Capacity by Division (Filled vs Open)',
+        labels: divCapArr.map(d => d[0]),
+        datasets: [
+          { label: 'Filled Slots', data: divCapArr.map(d => d[1].filled) },
+          { label: 'Open Slots', data: divCapArr.map(d => d[1].empty) },
+        ]
+      },
+      { type: 'table', title: 'Providers with Most Open Capacity', columns: ['Provider', 'Division', 'Filled', 'Open', 'Utilization', 'Avg wRVUs'],
+        rows: byEmpty.slice(0, 12).map(p => {
+          const util = p.filled / Math.max(p.filled + p.empty, 1) * 100;
+          return [
+            '<strong>' + p.name + '</strong>', p.div, p.filled,
+            '<span style="color:var(--amber);font-weight:700;">' + p.empty + '</span>',
+            '<span style="color:' + (util > 70 ? 'var(--green)' : util > 40 ? 'var(--amber)' : 'var(--red)') + ';font-weight:600;">' + util.toFixed(0) + '%</span>',
+            p.totalRVU.toFixed(1),
+          ];
+        })
+      },
+      { type: 'recommendation', title: 'Capacity Opportunities',
+        content: 'Providers with high open slot counts but meaningful wRVU production may be under-templated in QGenda. Conversely, those with many open slots and low RVUs may represent true available capacity for patient access expansion.' }
+    ]
+  };
+}
+
+function demoDiscrepancyReport() {
+  const sevCounts = { high: 0, medium: 0, low: 0 };
+  const typeCounts = {};
+  const divCounts = {};
+  DISCREPANCIES.forEach(d => {
+    sevCounts[d.severity] = (sevCounts[d.severity] || 0) + 1;
+    typeCounts[d.type] = (typeCounts[d.type] || 0) + 1;
+    divCounts[d.division] = (divCounts[d.division] || 0) + 1;
+  });
+  const typeLabels = {
+    qgenda_admin_but_active: 'Admin with Active RVUs', qgenda_missing: 'Missing from QGenda',
+    qgenda_active_no_rvu: 'Active with No RVU', qgenda_or_but_clinic: 'OR listed as Clinic',
+    qgenda_clinic_but_or: 'Clinic listed as OR', location_mismatch: 'Location Mismatch',
+    or_vs_qgenda: 'OR vs QGenda Type', or_no_qgenda: 'OR with No QGenda',
+  };
+  const typeArr = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+  const divArr = Object.entries(divCounts).sort((a, b) => b[1] - a[1]);
+  const provCounts = {};
+  DISCREPANCIES.forEach(d => { provCounts[d.provider] = (provCounts[d.provider] || 0) + 1; });
+  const provArr = Object.entries(provCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  return {
+    narrative: DISCREPANCIES.length + ' discrepancies detected across four data sources. ' + sevCounts.high + ' high severity (Admin slots with active RVUs), ' + sevCounts.medium + ' medium, ' + sevCounts.low + ' low. ' + (divArr[0] ? divArr[0][0] + ' division has the most at ' + divArr[0][1] : '') + '.',
+    widgets: [
+      { type: 'kpi_row', cards: [
+        { label: 'Total Discrepancies', value: DISCREPANCIES.length, accent: 'blue' },
+        { label: 'High Severity', value: sevCounts.high, sub: 'Immediate action', accent: 'red' },
+        { label: 'Medium', value: sevCounts.medium, sub: 'Review needed', accent: 'amber' },
+        { label: 'Low', value: sevCounts.low, sub: 'Informational', accent: 'blue' },
+      ]},
+      { type: 'bar_chart', title: 'Discrepancies by Type',
+        labels: typeArr.map(t => typeLabels[t[0]] || t[0]),
+        datasets: [{ label: 'Count', data: typeArr.map(t => t[1]) }] },
+      { type: 'doughnut_chart', title: 'Severity Distribution',
+        labels: ['High', 'Medium', 'Low'],
+        datasets: [{ data: [sevCounts.high, sevCounts.medium, sevCounts.low], colors: ['#C62828', '#D4850A', '#ADB5BD'] }] },
+      { type: 'bar_chart', title: 'Most Affected Providers',
+        labels: provArr.map(p => p[0]),
+        datasets: [{ label: 'Discrepancies', data: provArr.map(p => p[1]) }] },
+      { type: 'table', title: 'Division Breakdown', columns: ['Division', 'Discrepancies', 'Severity Impact'],
+        rows: divArr.map(([div, count]) => {
+          const divDiscs = DISCREPANCIES.filter(d => d.division === div);
+          const h = divDiscs.filter(d => d.severity === 'high').length;
+          const m = divDiscs.filter(d => d.severity === 'medium').length;
+          return [
+            '<strong>' + div + '</strong> - ' + (DIVISIONS_META[div] || ''), '<strong>' + count + '</strong>',
+            (h ? '<span style="color:var(--red);font-weight:600;">' + h + ' high</span> ' : '') + (m ? '<span style="color:var(--amber);font-weight:600;">' + m + ' med</span>' : '') + (!h && !m ? '<span style="color:var(--gray-400);">Low only</span>' : ''),
+          ];
+        })
+      },
+      { type: 'recommendation', title: 'Resolution Priority',
+        content: 'Focus on the <strong>' + sevCounts.high + ' high-severity</strong> discrepancies first - providers coded as Admin who are generating patient wRVUs. Correcting these templates improves capacity planning accuracy, FTE reporting, and ensures analytics reflect actual clinical operations.' }
+    ]
+  };
+}
+
+// Map quick action labels to generator functions
+const DEMO_GENERATORS = {
+  'Division Performance Scorecard': demoDivisionScorecard,
+  'Admin-Flagged Providers with Patient RVUs': demoAdminDiscrepancies,
+  'Department Schedule Heatmap': demoDeptHeatmap,
+  'OR Block Distribution by Facility': demoORDistribution,
+  'Provider Capacity & Open Slots': demoCapacitySlots,
+  'Discrepancy Risk Report': demoDiscrepancyReport,
+};
 
 function buildAgentView() {
   let h = '<div class="agent-container">';
@@ -1856,7 +2174,7 @@ function buildAgentView() {
   h += '<div class="agent-hero">';
   h += '<div class="agent-hero-label"><span class="experiment-badge-dot"></span> AI Agent</div>';
   h += '<div class="agent-hero-title">Schedule Intelligence Agent</div>';
-  h += '<div class="agent-hero-sub">Ask anything about provider schedules, capacity, or discrepancies — and get a custom dashboard built on the fly.</div>';
+  h += '<div class="agent-hero-sub">Ask anything about provider schedules, capacity, or discrepancies — and get a custom dashboard built on the fly. Try a quick action below to see it in action.</div>';
   h += '</div>';
   
   // Body
@@ -1869,7 +2187,7 @@ function buildAgentView() {
     h += '<div class="agent-empty-state">';
     h += '<div class="agent-empty-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00274C" stroke-width="2" stroke-linecap="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>';
     h += '<div class="agent-empty-title">What would you like to explore?</div>';
-    h += '<div class="agent-empty-text">Ask a question or use a quick action below. The agent analyzes all four data sources and builds a custom visualization for you.</div>';
+    h += '<div class="agent-empty-text">Click any quick action below to instantly generate a custom dashboard from live schedule data. Each builds a unique analysis with KPI cards, charts, heatmaps, and recommendations.</div>';
     h += '</div>';
   } else {
     agentHistory.forEach((msg, idx) => {
@@ -2131,81 +2449,60 @@ async function submitAgent() {
   
   submitBtn.disabled = true;
   
-  // Hide quick actions after first message
-  const qa = document.getElementById('agentQuickActions');
-  if (qa && agentHistory.filter(m => m.role === 'user').length > 1) qa.style.display = 'none';
+  // Quick actions remain visible for demo
   
+  // Check for demo dashboards first (works without API)
+  const demoFn = DEMO_GENERATORS[question];
+  if (demoFn) {
+    // Small delay for realistic feel
+    await new Promise(r => setTimeout(r, 600 + Math.random() * 400));
+    agentHistory = agentHistory.filter(m => m.role !== 'thinking');
+    try {
+      const result = demoFn();
+      agentHistory.push({ role: 'agent', widgets: result.widgets || [], narrative: result.narrative || '' });
+    } catch(e) {
+      agentHistory.push({ role: 'agent', narrative: '', widgets: [{ type: 'callout', title: 'Error', content: 'Dashboard generation error: ' + escapeHtml(e.message) }] });
+    }
+    renderAgentMessages();
+    submitBtn.disabled = false;
+    return;
+  }
+  
+  // For custom questions, use AI API
   const dataContext = buildFullContext(question);
   
   const systemPrompt = `You are the Schedule Intelligence Agent for the University of Michigan Department of Urology. You analyze provider schedule data and BUILD CUSTOM DASHBOARDS by returning structured JSON widget specifications.
 
 DATA SOURCES:
-1. OR Schedule — surgical block allocations (room, facility, week, day)
-2. Clinic Templates — MiChart clinic session assignments (location, week, day, AM/PM)
-3. QGenda — work pattern assignments (the system of record for scheduling)
-4. RVU Production — actual patient activity and wRVU generation (last 3 months Nov 2025-Jan 2026, the ground truth)
+1. OR Schedule - surgical block allocations (room, facility, week, day)
+2. Clinic Templates - MiChart clinic session assignments (location, week, day, AM/PM)
+3. QGenda - work pattern assignments (the system of record for scheduling)
+4. RVU Production - actual patient activity and wRVU generation (last 3 months Nov 2025-Jan 2026, the ground truth)
 
 KEY DEFINITIONS:
 - Session = one half-day (AM or PM). Full clinic day = 2 sessions.
-- 1.0 clinical FTE ≈ 8-10 clinical sessions/week. 0.5 FTE ≈ 4-5 sessions/week.
-- Schedule grid: 5 weeks × 5 days (Mon-Fri).
+- 1.0 clinical FTE = 8-10 clinical sessions/week. 0.5 FTE = 4-5 sessions/week.
+- Schedule grid: 5 weeks x 5 days (Mon-Fri).
 - Locations: TC=Taubman, NHC=Northville, BCSC=Brighton, WAA=West Ann Arbor, LCSC=Livonia, YHC=Ypsilanti, CHE=Chelsea
 - Divisions: ENDO (Endourology), ONC (Oncology), MHR (Men's Health & Reconstruction), NPR (Neuro Pelvic Reconstruction), PED (Pediatric), CUE (Community Urology East), CUW (Community Urology West)
 
 YOUR RESPONSE FORMAT:
-You MUST respond with ONLY valid JSON, no markdown fences, no commentary outside JSON. The JSON must match this schema:
+You MUST respond with ONLY valid JSON, no markdown fences, no commentary outside JSON. The JSON schema:
 
 {
-  "narrative": "A 1-3 sentence plain-text summary of the key findings, presented as if briefing the Department Chair.",
+  "narrative": "1-3 sentence summary for the Department Chair.",
   "widgets": [
-    // Array of widget objects. Available types:
-
-    // KPI ROW — show 2-5 metric cards
-    { "type": "kpi_row", "cards": [
-      { "label": "Metric Name", "value": "42", "sub": "optional subtitle", "accent": "blue|green|amber|red" }
-    ]},
-
-    // TABLE — comparison data
-    { "type": "table", "title": "Table Title", "columns": ["Col1","Col2"],
-      "rows": [["val1","val2"]] },
-
-    // CHARTS — bar, line, pie, doughnut
-    { "type": "bar_chart", "title": "Chart Title",
-      "labels": ["A","B","C"],
-      "datasets": [{ "label": "Series", "data": [10,20,30] }] },
-      
-    // Use pie_chart or doughnut_chart for proportional data
-    { "type": "pie_chart", "title": "Distribution",
-      "labels": ["A","B","C"],
-      "datasets": [{ "data": [40,35,25] }] },
-
-    // HEATMAP — week × day grid visualization
-    { "type": "heatmap", "title": "Coverage Heatmap", "max": 10,
-      "columns": ["Mon","Tue","Wed","Thu","Fri"],
-      "rows": [
-        { "label": "Wk 1", "values": [{"value":5,"display":"5"},{"value":3,"display":"3"}] }
-      ]
-    },
-
-    // CALLOUT — data highlight
-    { "type": "callout", "title": "Key Finding", "content": "HTML content" },
-
-    // RECOMMENDATION — actionable suggestion
-    { "type": "recommendation", "title": "Recommendation Title", "content": "HTML content" }
+    { "type": "kpi_row", "cards": [{ "label": "Name", "value": "42", "sub": "subtitle", "accent": "blue|green|amber|red" }] },
+    { "type": "table", "title": "Title", "columns": ["Col1"], "rows": [["val1"]] },
+    { "type": "bar_chart", "title": "Title", "labels": ["A"], "datasets": [{ "label": "S", "data": [10] }] },
+    { "type": "pie_chart|doughnut_chart", "title": "Title", "labels": ["A"], "datasets": [{ "data": [40] }] },
+    { "type": "heatmap", "title": "Title", "max": 10, "columns": ["Mon"], "rows": [{ "label": "Wk 1", "values": [{"value":5,"display":"5"}] }] },
+    { "type": "callout", "title": "Title", "content": "HTML content" },
+    { "type": "recommendation", "title": "Title", "content": "HTML content" }
   ]
 }
 
-DASHBOARD DESIGN GUIDELINES:
-- Always start with a kpi_row showing the most important top-line metrics for the question.
-- Use charts for comparisons, distributions, and trends (bar_chart for comparisons, pie/doughnut for distributions, line for trends).
-- Use heatmaps for week × day schedule visualizations.
-- Use tables for detailed provider-by-provider data.
-- End with recommendations when actionable insights exist.
-- Be specific and data-driven. Use actual numbers from the data.
-- Keep narratives crisp — this is for the Department Chair.
-- You may use simple HTML tags like <strong> and <em> inside "content" fields.
-- For table cell values, you may use simple HTML for formatting.
-- CRITICAL: Output ONLY the JSON object. No text before or after.`;
+GUIDELINES: Start with kpi_row for top-line metrics. Use charts for comparisons, heatmaps for week/day grids, tables for detail. End with recommendations. Use actual numbers. Keep narratives crisp. You may use <strong> and <em> in content fields. Output ONLY the JSON object.`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -2215,44 +2512,30 @@ DASHBOARD DESIGN GUIDELINES:
         model: 'claude-sonnet-4-5-20250929',
         max_tokens: 4000,
         system: systemPrompt,
-        messages: [{
-          role: 'user',
-          content: dataContext + '\n\n=== QUESTION ===\n' + question
-        }]
+        messages: [{ role: 'user', content: dataContext + '\n\n=== QUESTION ===\n' + question }]
       })
     });
     
     const data = await response.json();
     const rawText = data.content.map(b => b.type === 'text' ? b.text : '').join('');
     
-    // Remove thinking indicator
     agentHistory = agentHistory.filter(m => m.role !== 'thinking');
     
-    // Parse JSON response
     let parsed;
     try {
       const cleaned = rawText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
       parsed = JSON.parse(cleaned);
     } catch(parseErr) {
-      // Fallback: treat as plain HTML response (legacy advisor mode)
-      parsed = {
-        narrative: '',
-        widgets: [{ type: 'callout', title: 'Analysis', content: rawText }]
-      };
+      parsed = { narrative: '', widgets: [{ type: 'callout', title: 'Analysis', content: rawText }] };
     }
     
-    agentHistory.push({
-      role: 'agent',
-      widgets: parsed.widgets || [],
-      narrative: parsed.narrative || ''
-    });
+    agentHistory.push({ role: 'agent', widgets: parsed.widgets || [], narrative: parsed.narrative || '' });
     
   } catch (err) {
     agentHistory = agentHistory.filter(m => m.role !== 'thinking');
     agentHistory.push({
-      role: 'agent',
-      narrative: '',
-      widgets: [{ type: 'callout', title: 'Error', content: '<span style="color:var(--red);">Agent request failed: ' + escapeHtml(err.message) + '</span>' }]
+      role: 'agent', narrative: '',
+      widgets: [{ type: 'callout', title: 'Connection Note', content: 'The AI API is not connected in this demo environment. Try one of the pre-built dashboards using the quick action buttons above, or connect your API key to enable custom queries.' }]
     });
   }
   
